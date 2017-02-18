@@ -8,15 +8,23 @@ Then it uses python's multiprocessing module to make it a (kind of) powerful CPU
 
 # USAGE
 
-> use -s or --ssid to specify the SSID of the network to crack directly. I flag is not set the script will ask you for it during execution.
+Use 
+> -s or --ssid
+to specify the SSID of the network to crack directly. I flag is not set the script will ask you for it during execution.
 
-> use -c or --capture to specify the location of the PCAP file to read the packets from.
+Use 
+> -c or --capture 
+to specify the location of the PCAP file to read the packets from.
 
 To provide the cracker with words to use you must pass either the Worlist parameter or STDIN.
 
-> use -w or --wordlist to scpecify the location of the worlist file to load the password candidates from.
+Use 
+> -w or --wordlist 
+to scpecify the location of the worlist file to load the password candidates from.
 
-> use --stdin to read the words from stdin. You can use a password generator program and pipe it's output to this cracker.
+Use 
+> --stdin 
+to read the words from stdin. You can use a password generator program and pipe it's output to this cracker.
 
 
 # Examples
