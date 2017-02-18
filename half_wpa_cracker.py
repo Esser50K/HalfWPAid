@@ -6,8 +6,10 @@ import hmac,hashlib,binascii
 import argparse
 from scapy.all import EAPOL, EAPOLKeyDot11, Dot11Beacon, rdpcap
 from pbkdf2_ctypes import pbkdf2_bin
+from prettytable import PrettyTable
 from multiprocessing import Pool, Queue, cpu_count
 from threading import Thread
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-s", "--ssid", help="Specify SSID to of network to crack")
@@ -104,16 +106,6 @@ class HalfWPAHandshake(object):
 				self.aNonce and self.sNonce and 
 				self.mic and self.data) != None
 
-def print_status():
-	time.sleep(2)
-	while not found_password:
-		elapsed_time 	= time.time() - start_time
-		tries_per_sec 	= calculated_mics / elapsed_time
-		print "Elapsed_Time:\t{} seconds".format(elapsed_time)
-		print "Total Keys Tried:\t{}".format(calculated_mics)
-		print "Tries per second:\t{}".format(tries_per_sec)
-		time.sleep(2)
-
 def find_half_handshakes(captured_packets):
 	half_handshakes = []
 	for packet in captured_packets:
@@ -205,16 +197,15 @@ def add_from_stdin():
 		
 
 def present_read_handshakes(hhandshakes):
-	print "ID", "\t", "AP Mac", "\t\t\t", "Client Mac", "\t\t", "SSID", "\t\t\t", "Frame1", "\t", "Frame2"
+	headers = ["ID", "AP Mac", "Client Mac", "SSID", "Frame1", "Frame2"]
+	table = PrettyTable(headers)
 	id = 0
 	for hs in hhandshakes:
-		print "{}\t{}\t{}\t{}\t\t{}\t{}".format(id, hs.ascii_ap_mac, 
-												hs.ascii_client_mac, 
-												hs.ssid, 
-												hs.aNonce != None, hs.sNonce != None)
+		args = [id, hs.ascii_ap_mac, hs.ascii_client_mac, hs.ssid, hs.aNonce != None, hs.sNonce != None ]
+		table.add_row(args)
 		id += 1
 
-	print "\n"
+	print table
 
 def choose_handshake(hhandshakes, ssid):
 	if ssid != None:
@@ -319,7 +310,3 @@ if __name__ == '__main__':
 	else:
 		print "[-] The chosen handshake is not complete and cannot be cracked."
 		print "[*] Choose one thet has both Frame1 and Frame2 flags set to True"
-
-
-			
-
