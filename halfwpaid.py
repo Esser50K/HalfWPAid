@@ -2,7 +2,7 @@
 import logging
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
 import argparse
-import sys, time, signal
+import sys, os, time, signal
 import hmac,hashlib,binascii
 from scapy.all import EAPOL, EAPOLKeyDot11, Dot11Beacon, rdpcap
 from pbkdf2_ctypes import pbkdf2_bin
@@ -10,6 +10,8 @@ from prettytable import PrettyTable
 from multiprocessing import Pool, Queue, cpu_count
 from threading import Thread
 
+# Change working directory
+os.chdir(os.path.dirname(sys.argv[0]))
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-s", "--ssid", help="Specify SSID to of network to crack")
