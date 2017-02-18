@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 import logging
 logging.getLogger("scapy.runtime").setLevel(logging.ERROR)
+import argparse
 import sys, time, signal
 import hmac,hashlib,binascii
-import argparse
 from scapy.all import EAPOL, EAPOLKeyDot11, Dot11Beacon, rdpcap
 from pbkdf2_ctypes import pbkdf2_bin
 from prettytable import PrettyTable
@@ -308,5 +308,5 @@ if __name__ == '__main__':
 		cracker_pool.terminate()
 		cracker_pool.join()
 	else:
-		print "[-] The chosen handshake is not complete and cannot be cracked."
-		print "[*] Choose one thet has both Frame1 and Frame2 flags set to True"
+		print "[-] The chosen half handshake is not complete and cannot be cracked."
+		print "[*] Choose one that has both Frame1 and Frame2 flags set to True"
