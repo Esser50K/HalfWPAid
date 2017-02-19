@@ -149,7 +149,7 @@ def test_word(ssid, clientMac, APMac, Anonce, Snonce, mic, data):
 	while not found_password:
 		word = word_queue.get(block = True, timeout = 1)
 		found_password = compare_mic(ssid, clientMac, APMac, Anonce, Snonce, mic, data, word)
-		result_queue.put(found_password)
+		result_queue.put((found_password, word))
 
 	return None
 
@@ -166,7 +166,6 @@ def compare_mic(ssid, clientMac, APMac, Anonce, Snonce, mic, data, word):
 		calculatedMic = hmac.new(kck,data).digest()
 
 	if mic == calculatedMic:
-		print "Cracked Password:\t", word
 		return True
 
 	return False
@@ -178,14 +177,22 @@ def count_results():
 	# The timeout is there so it doesn't stop counting immediatly after the queue is empty
 	# Although it is safe to stop it after a second which means the program was either interrupted or has finished
 	try:
-		while not result_queue.get(timeout = 1):
+		result, word = False, ""
+		while not result:
+			result, word = result_queue.get(timeout = 1)
 			calculated_mics += 1
+		print "Cracked Password:\t", word
+		log_password(prog_args.ssid, word)
 	except:
 		pass
 
 	print "Time elapsed:\t", time.time() - start_time
 	found_password = True
 
+def log_password(ssid, password):
+	with open(ssid + ".cracked", "w") as password_file:
+		result_string = "Cracked Password:\nSSID:\t{}\nPASSWORD:\t{}\n".format(ssid, password)
+		password_file.write(result_string)
 
 def add_from_stdin():
 	global word_queue, found_password
