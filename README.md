@@ -45,3 +45,6 @@ In order to capture a Half WPA handshake one must mimick a WPA protected access 
 The packets of this interaction must be logged in order to capture the first 2 frames of the WPA handshake.
 
 The easiest way to do this is by using the Evil Twin Framework that has built-in support for catching/logging Half WPA Handshakes.
+
+# TODO
+Add PMK pre-computation support
